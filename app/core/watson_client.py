@@ -25,6 +25,3 @@ def transcribe_audio_with_watson(audio_path: str) -> str:
     except Exception as e:
         return f"Transcription failed: {str(e)}"
 
-
-text = transcribe_audio_with_watson("app/core/file.mp3")
-print(text)

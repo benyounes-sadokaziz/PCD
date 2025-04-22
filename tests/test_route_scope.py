@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 app = FastAPI()
 
 
-@app.get("/users/{user_id}")
+@app.get("/users/{id}")
 async def get_user(user_id: str, request: Request):
     route: APIRoute = request.scope["route"]
     return {"user_id": user_id, "path": route.path}
