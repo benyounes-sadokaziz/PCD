@@ -1,5 +1,5 @@
-document.addEventListener("DOMContentLoaded", () => {
-  console.log("Recorder.js loaded")
+document.addEventListener("DOMContentLoaded", async () => {
+  console.log("Recorder.js loaded with MP3 support")
 
   // Get elements
   const startRecordingBtn = document.getElementById("start-recording")
@@ -13,10 +13,26 @@ document.addEventListener("DOMContentLoaded", () => {
   // Set API base URL - Use relative URL since frontend and backend are on same origin
   const API_BASE_URL = "" // Empty string for same-origin requests
 
+  // Check for lamejs
+  const checkLameJs = () => {
+    if (typeof lamejs !== 'undefined') {
+      console.log("lamejs is loaded and available")
+      return true
+    }
+    console.warn("lamejs is not loaded")
+    return false
+  }
+
   let mediaRecorder
+  let audioContext
+  let audioStream
+  let audioProcessor
+  let mp3Encoder
+  let mp3Data = []
   let audioChunks = []
   let recordingStartTime
   let timerInterval
+  let isRecording = false
 
   // Function to show alerts (success or error)
   function showAlert(type, message) {
@@ -25,7 +41,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Create a new alert element
       const alertDiv = document.createElement("div")
-      alertDiv.className = `alert alert-${type}`
       alertDiv.textContent = message
       alertDiv.style.position = "fixed"
       alertDiv.style.top = "20px"
@@ -94,66 +109,140 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // Function to convert Float32Array to Int16Array (required for MP3 encoding)
+  function convertToInt16(float32Array) {
+    const int16Array = new Int16Array(float32Array.length);
+    for (let i = 0; i < float32Array.length; i++) {
+      // Convert float to int
+      const s = Math.max(-1, Math.min(1, float32Array[i]));
+      int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+    return int16Array;
+  }
+
   // Handle start recording
   if (startRecordingBtn) {
     startRecordingBtn.addEventListener("click", async () => {
       try {
-        console.log("Starting audio recording")
+        console.log("Starting audio recording...")
 
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-
-        mediaRecorder = new MediaRecorder(stream)
-        audioChunks = []
-
-        mediaRecorder.addEventListener("dataavailable", (event) => {
-          audioChunks.push(event.data)
-          console.log("Audio chunk received, size:", event.data.size)
+        // Request audio stream
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1, // Mono audio for better MP3 compatibility
+            sampleRate: 44100, // 44.1kHz is good for MP3
+            echoCancellation: true,
+            noiseSuppression: true,
+          },
         })
 
-        mediaRecorder.addEventListener("stop", () => {
-          console.log("Recording stopped, creating audio blob")
+        // Store the stream
+        audioStream = stream
 
-          const audioBlob = new Blob(audioChunks, { type: "audio/mp3" })
-          console.log("Audio blob created, size:", audioBlob.size)
-
-          const audioUrl = URL.createObjectURL(audioBlob)
-
-          if (recordedAudio) {
-            recordedAudio.src = audioUrl
+        // Check if lamejs is available
+        const lameJsAvailable = checkLameJs();
+        
+        if (!lameJsAvailable) {
+          console.warn("MP3 encoder not available, falling back to WebM")
+          showAlert("warning", "MP3 encoder not available. Falling back to WebM format.")
+          
+          // Fallback to WebM if MP3 encoder is not available
+          const options = { mimeType: "audio/webm" }
+          if (MediaRecorder.isTypeSupported("audio/webm")) {
+            mediaRecorder = new MediaRecorder(stream, options)
+            console.log("Using audio/webm format for recording")
+          } else if (MediaRecorder.isTypeSupported("audio/ogg")) {
+            mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/ogg" })
+            console.log("Using audio/ogg format for recording")
           } else {
-            console.error("Recorded audio element not found")
+            mediaRecorder = new MediaRecorder(stream)
+            console.log("Using default recording format:", mediaRecorder.mimeType)
           }
 
-          if (audioPreview && resetRecordingBtn) {
-            audioPreview.classList.remove("hidden")
-            resetRecordingBtn.classList.remove("hidden")
-          } else {
-            console.error("Audio preview or reset button not found")
-          }
+          audioChunks = []
 
-          // Stop all tracks
-          stream.getTracks().forEach((track) => track.stop())
-        })
+          mediaRecorder.addEventListener("dataavailable", (event) => {
+            if (event.data.size > 0) {
+              audioChunks.push(event.data)
+            }
+          })
 
-        // Start recording
-        mediaRecorder.start()
+          mediaRecorder.addEventListener("stop", () => {
+            const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType })
+            const audioUrl = URL.createObjectURL(audioBlob)
+
+            if (recordedAudio) {
+              recordedAudio.src = audioUrl
+            }
+
+            if (audioPreview && resetRecordingBtn) {
+              audioPreview.classList.remove("hidden")
+              resetRecordingBtn.classList.remove("hidden")
+            }
+
+            // Stop all tracks
+            stream.getTracks().forEach((track) => track.stop())
+          })
+
+          mediaRecorder.start(1000)
+        } else {
+          console.log("Using MP3 encoder for recording")
+          
+          // Use Web Audio API for MP3 recording
+          audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          const microphoneSource = audioContext.createMediaStreamSource(stream);
+          
+          // Create a processor node
+          audioProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+          
+          // Initialize MP3 encoder (mono, 44.1kHz, 128kbps)
+          mp3Encoder = new lamejs.Mp3Encoder(1, 44100, 128);
+          mp3Data = [];
+          
+          // Process audio data
+          audioProcessor.onaudioprocess = function(e) {
+            if (!isRecording) return;
+            
+            // Get channel data
+            const channelData = e.inputBuffer.getChannelData(0);
+            
+            // Convert to format suitable for MP3 encoding
+            const samples = convertToInt16(channelData);
+            
+            // Encode MP3
+            const mp3buf = mp3Encoder.encodeBuffer(samples);
+            if (mp3buf.length > 0) {
+              mp3Data.push(mp3buf);
+            }
+          };
+          
+          // Connect the nodes
+          microphoneSource.connect(audioProcessor);
+          audioProcessor.connect(audioContext.destination);
+          
+          // Set recording flag
+          isRecording = true;
+          
+          showAlert("success", "Recording started in MP3 format. Speak now...")
+        }
+
         recordingStartTime = Date.now()
 
         // Update UI
         if (startRecordingBtn && stopRecordingBtn) {
           startRecordingBtn.classList.add("hidden")
           stopRecordingBtn.classList.remove("hidden")
-        } else {
-          console.error("Start or stop recording button not found")
         }
 
         // Start timer
         timerInterval = setInterval(updateTimer, 1000)
 
-        showAlert("success", "Recording started. Speak now...")
+        if (!lameJsAvailable) {
+          showAlert("success", "Recording started. Speak now...")
+        }
       } catch (error) {
         console.error("Microphone access error:", error)
-        showAlert("error", "Could not access microphone. Please check permissions.")
+        showAlert("error", `Could not access microphone: ${error.message}`)
       }
     })
   } else {
@@ -165,19 +254,62 @@ document.addEventListener("DOMContentLoaded", () => {
     stopRecordingBtn.addEventListener("click", () => {
       console.log("Stop recording button clicked")
 
-      if (mediaRecorder && mediaRecorder.state !== "inactive") {
-        mediaRecorder.stop()
-
-        // Update UI
-        stopRecordingBtn.classList.add("hidden")
-
-        // Stop timer
-        clearInterval(timerInterval)
-
-        showAlert("success", "Recording stopped. You can now transcribe it.")
+      if (isRecording && audioProcessor) {
+        // Stop MP3 recording
+        isRecording = false;
+        
+        // Finalize MP3 encoding
+        const mp3Final = mp3Encoder.flush();
+        if (mp3Final.length > 0) {
+          mp3Data.push(mp3Final);
+        }
+        
+        // Create MP3 blob
+        const blob = new Blob(mp3Data, { type: "audio/mp3" });
+        const audioUrl = URL.createObjectURL(blob);
+        
+        // Store for transcription
+        audioChunks = [blob];
+        
+        // Update audio player
+        if (recordedAudio) {
+          recordedAudio.src = audioUrl;
+        }
+        
+        // Show audio player and reset button
+        if (audioPreview && resetRecordingBtn) {
+          audioPreview.classList.remove("hidden");
+          resetRecordingBtn.classList.remove("hidden");
+        }
+        
+        // Disconnect and close audio context
+        if (audioProcessor) {
+          audioProcessor.disconnect();
+          audioProcessor = null;
+        }
+        
+        if (audioStream) {
+          audioStream.getTracks().forEach(track => track.stop());
+        }
+        
+        console.log("MP3 recording stopped successfully");
+        
+      } else if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        // Stop WebM/fallback recording
+        mediaRecorder.stop();
+        console.log("WebM recording stopped successfully");
       } else {
-        console.error("MediaRecorder not found or already inactive")
+        console.error("No active recording to stop");
+        return;
       }
+
+      // Update UI
+      stopRecordingBtn.classList.add("hidden")
+
+      // Stop timer
+      clearInterval(timerInterval)
+
+      showAlert("success", "Recording stopped. You can now transcribe it.")
     })
   } else {
     console.error("Stop recording button not found")
@@ -189,6 +321,7 @@ document.addEventListener("DOMContentLoaded", () => {
       console.log("Reset recording button clicked")
       resetRecorderUI()
       audioChunks = []
+      mp3Data = []
     })
   } else {
     console.error("Reset recording button not found")
@@ -213,20 +346,34 @@ document.addEventListener("DOMContentLoaded", () => {
         const transcriptionResult = document.getElementById("transcription-result")
         const transcriptionContent = document.getElementById("transcription-content")
 
-        if (transcriptionContent) {
+        if (transcriptionContent && transcriptionResult) {
           transcriptionContent.innerHTML = `
-            <div style="text-align: center; padding: 20px;">
-              <div class="spinner" style="margin: 0 auto;"></div>
-              <p>Transcribing your recording...</p>
-            </div>
-          `
+          <div style="text-align: center; padding: 20px;">
+            <div class="spinner" style="margin: 0 auto;"></div>
+            <p>Transcribing your recording...</p>
+          </div>
+        `
           transcriptionResult.classList.remove("hidden")
         }
 
-        const audioBlob = new Blob(audioChunks, { type: "audio/mp3" })
-        console.log("Audio blob created for transcription, size:", audioBlob.size)
+        // Get the first audio chunk
+        const audioBlob = audioChunks[0];
+        console.log("Audio blob created for transcription, size:", audioBlob.size, "type:", audioBlob.type)
 
-        const audioFile = new File([audioBlob], "recorded-audio.mp3", { type: "audio/mp3" })
+        // Determine the correct file extension based on the MIME type
+        let fileName = "recorded-audio.webm";
+        let fileType = audioBlob.type;
+        
+        if (fileType.includes("mp3")) {
+          fileName = "recorded-audio.mp3";
+        } else if (fileType.includes("ogg")) {
+          fileName = "recorded-audio.ogg";
+        } else if (fileType.includes("wav")) {
+          fileName = "recorded-audio.wav";
+        }
+        
+        const audioFile = new File([audioBlob], fileName, { type: fileType });
+        console.log("Created audio file:", fileName, "type:", fileType);
 
         const formData = new FormData()
         formData.append("file", audioFile)
@@ -274,20 +421,21 @@ document.addEventListener("DOMContentLoaded", () => {
         console.log("Transcription preview:", transcription.substring(0, 100) + "...")
 
         // Display transcription
-        if (!transcriptionResult || !transcriptionContent) {
-          showAlert("error", "Transcription result elements not found in the DOM.")
-          return
+        if (transcriptionResult && transcriptionContent) {
+          transcriptionContent.textContent = transcription
+          transcriptionResult.classList.remove("hidden")
+
+          // Scroll to transcription
+          transcriptionResult.scrollIntoView({ behavior: "smooth" })
+        } else {
+          console.error("Transcription result elements not found in the DOM.")
+          showAlert("error", "Could not display transcription. Please try refreshing the page.")
         }
-
-        transcriptionContent.textContent = transcription
-        transcriptionResult.classList.remove("hidden")
-
-        // Scroll to transcription
-        transcriptionResult.scrollIntoView({ behavior: "smooth" })
 
         // Reset recorder
         resetRecorderUI()
         audioChunks = []
+        mp3Data = []
 
         showAlert("success", "Transcription completed successfully!")
       } catch (error) {
@@ -298,14 +446,14 @@ document.addEventListener("DOMContentLoaded", () => {
         const transcriptionResult = document.getElementById("transcription-result")
         const transcriptionContent = document.getElementById("transcription-content")
 
-        if (transcriptionContent) {
+        if (transcriptionContent && transcriptionResult) {
           transcriptionContent.innerHTML = `
-            <div class="alert alert-error" style="margin: 0;">
-              <h3>Transcription Error</h3>
-              <p>${error.message || "An error occurred during transcription."}</p>
-              <p>Please try again with a different recording or check your connection.</p>
-            </div>
-          `
+          <div class="alert alert-error" style="margin: 0;">
+            <h3>Transcription Error</h3>
+            <p>${error.message || "An error occurred during transcription."}</p>
+            <p>Please try again with a different recording or check your connection.</p>
+          </div>
+        `
           transcriptionResult.classList.remove("hidden")
         }
       } finally {
