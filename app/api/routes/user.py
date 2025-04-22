@@ -9,11 +9,9 @@ router = APIRouter()
 
 @router.post("/api/register", response_model=user_schema.UserOut)
 def register(user: user_schema.UserCreate, db: Session = Depends(get_db)):
-    print("hiiii")
     if db.query(User).filter(User.username == user.username).first():
         raise HTTPException(status_code=400, detail="Username already exists")
     
-    print("23")
     hashed = hash_password(user.password)
     db_user = User(username=user.username, email=user.email, hashed_password=hashed)
     db.add(db_user)
@@ -29,4 +27,4 @@ def login(user: user_schema.UserLogin, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
     token = create_access_token({"sub": db_user.username})
-    return {"access_token": token, "token_type": "bearer"}
+    return {"access_token": token, "token_type": "bearer","username":user.username}

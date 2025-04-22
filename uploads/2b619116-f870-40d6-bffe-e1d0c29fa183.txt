@@ -1,0 +1,1 @@
+Transcription failed: Error: Stream was 44 bytes but needs to be at least 100 bytes., Status code: 400 , X-global-transaction-id: 7f117a00-2cd5-45e0-bd01-176cd1ec6cc1

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>History - Media Transcription App</title>
+    <link rel="stylesheet" href="../css/style.css">
+    <link rel="stylesheet" href="../css/dashboard.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <nav class="navbar">
+        <a href="home.html" class="navbar-brand">Media Transcriber</a>
+        <ul class="navbar-nav">
+            <li class="nav-item">
+                <a href="home.html" class="nav-link">Home</a>
+            </li>
+            <li class="nav-item">
+                <a href="history.html" class="nav-link active">History</a>
+            </li>
+            <li class="nav-item">
+                <a href="#" id="logout-btn" class="nav-link">Logout</a>
+            </li>
+        </ul>
+    </nav>
+
+    <div class="dashboard-container">
+        <section class="welcome-section">
+            <h1 class="welcome-title">Your Transcription History</h1>
+            <p class="welcome-subtitle">View and manage your past transcriptions</p>
+        </section>
+
+        <div id="alert-container"></div>
+
+        <section id="history-list">
+            <!-- History items will be loaded here -->
+            <div class="empty-state hidden" id="empty-history">
+                <div class="empty-state-icon">
+                    <i class="fas fa-history"></i>
+                </div>
+                <h3 class="empty-state-text">No transcription history</h3>
+                <p class="empty-state-subtext">Your transcription history will appear here</p>
+                <a href="home.html" class="btn btn-primary">Create a Transcription</a>
+            </div>
+        </section>
+    </div>
+
+    <script src="../js/auth.js"></script>
+    <script src="../js/history.js"></script>
+</body>
+</html>

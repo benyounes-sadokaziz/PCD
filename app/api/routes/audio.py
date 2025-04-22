@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Form
 from sqlalchemy.orm import Session
 import uuid
 import os
@@ -6,11 +6,10 @@ import subprocess
 
 from app.core.watson_client import transcribe_audio_with_watson
 from app.db.models.file import MediaFile
-from app.db.database import SessionLocal
+from app.db.database import SessionLocal, get_db
 
 from app.core.dependencies import get_current_user
 from app.db.models.user import User
-from app.db.database import get_db
 from fastapi.responses import FileResponse
 
 router = APIRouter()
@@ -18,30 +17,55 @@ router = APIRouter()
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-
+FFMPEG_PATH = "C:/Users/sadok/Downloads/ffmpeg-7.1.1-essentials_build/ffmpeg-7.1.1-essentials_build/bin/ffmpeg.exe"
 
 def extract_audio(video_path: str, audio_path: str) -> bool:
     try:
         subprocess.run([
-            "ffmpeg", "-i", video_path,
-            "-vn", "-acodec", "mp3", audio_path
-        ], check=True)
+            FFMPEG_PATH, "-y",  # overwrite output if exists
+            "-i", video_path,
+            "-vn",  # no video
+            "-acodec", "libmp3lame",  # explicitly use mp3 encoder
+            audio_path
+        ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         return True
-    except subprocess.CalledProcessError:
+    except subprocess.CalledProcessError as e:
+        print("Error:", e.stderr.decode())  # pour voir l'erreur exacte
         return False
 
 @router.post("/transcribe")
 async def transcribe(
-    file: UploadFile = File(...),  
+    file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db) ):
-    ext = os.path.splitext(file.filename)[1].lower()
+    db: Session = Depends(get_db)
+):
+    # Fixed the syntax error in the function parameters
+    
+    ext = str(os.path.splitext(file.filename)[1]).lower()
     unique_id = str(uuid.uuid4())
     original_path = os.path.join(UPLOAD_DIR, f"{unique_id}{ext}")
 
     # Save uploaded file
+    content = await file.read()
     with open(original_path, "wb") as f:
-        f.write(await file.read())
+        f.write(content)
+
+    # If it's a plain text file, return content directly
+    if ext == ".txt":
+        text_content = content.decode("utf-8")  # assuming utf-8 encoding
+        
+        # Save metadata to DB for text files too
+        txt_path = original_path
+        media = MediaFile(
+            username=current_user.username,
+            filename=file.filename,
+            path=original_path,
+            transcription_path=txt_path
+        )
+        db.add(media)
+        db.commit()
+        
+        return text_content
 
     # Determine if file is audio or video
     if ext in [".mp4", ".mov", ".avi", ".mkv"]:
@@ -58,13 +82,13 @@ async def transcribe(
     transcription = transcribe_audio_with_watson(audio_path)
 
     # Save transcription
-    txt_path = os.path.join(UPLOAD_DIR, f"{unique_id}.txt")
+    txt_path = os.path.join(UPLOAD_DIR, f"{unique_id}.txt") 
     with open(txt_path, "w", encoding="utf-8") as f:
         f.write(transcription)
 
     # Save metadata to DB
     media = MediaFile(
-        user_id=current_user.id,
+        username=current_user.username,
         filename=file.filename,
         path=original_path,
         transcription_path=txt_path
@@ -74,3 +98,123 @@ async def transcribe(
     db.refresh(media)
 
     return transcription
+
+# Add endpoints for history and video retrieval
+""" @router.get("/api/history")
+async def get_history(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # Get all media files for the current user
+    media_files = db.query(MediaFile).filter(
+        MediaFile.username == current_user.username
+    ).order_by(MediaFile.created_at.desc()).all()
+    
+    result = []
+    for media in media_files:
+        # Read transcription from file
+        try:
+            with open(media.transcription_path, "r", encoding="utf-8") as f:
+                transcription = f.read()
+        except:
+            transcription = "Transcription not available"
+            
+        result.append({
+            "id": media.id,
+            "filename": media.filename,
+            "created_at": media.created_at,
+            "transcription": transcription
+        })
+    
+    return result
+
+@router.get("/api/transcriptions/{media_id}")
+async def get_transcription(
+    media_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # Get the media file
+    media = db.query(MediaFile).filter(
+        MediaFile.id == media_id,
+        MediaFile.username == current_user.username
+    ).first()
+    
+    if not media:
+        raise HTTPException(status_code=404, detail="Transcription not found")
+    
+    # Return the transcription file
+    return FileResponse(media.transcription_path)
+
+@router.delete("/api/history/{media_id}")
+async def delete_history_item(
+    media_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # Get the media file
+    media = db.query(MediaFile).filter(
+        MediaFile.id == media_id,
+        MediaFile.username == current_user.username
+    ).first()
+    
+    if not media:
+        raise HTTPException(status_code=404, detail="Item not found")
+    
+    # Delete the files
+    try:
+        if os.path.exists(media.path):
+            os.remove(media.path)
+        if os.path.exists(media.transcription_path):
+            os.remove(media.transcription_path)
+    except Exception as e:
+        # Log the error but continue with DB deletion
+        print(f"Error deleting files: {e}")
+    
+    # Delete from database
+    db.delete(media)
+    db.commit()
+    
+    return {"message": "Item deleted successfully"}
+
+ @router.get("/api/videos")
+async def get_videos(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # Get video files for the current user
+    video_files = db.query(MediaFile).filter(
+        MediaFile.username == current_user.username,
+        MediaFile.filename.like("%.mp4") | 
+        MediaFile.filename.like("%.mov") | 
+        MediaFile.filename.like("%.avi") | 
+        MediaFile.filename.like("%.mkv")
+    ).order_by(MediaFile.created_at.desc()).all()
+    
+    result = []
+    for video in video_files:
+        result.append({
+            "id": video.id,
+            "filename": video.filename,
+            "created_at": video.created_at
+        })
+    
+    return result
+
+ @router.get("/api/videos/{video_id}")
+async def get_video(
+    video_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # Get the video file
+    video = db.query(MediaFile).filter(
+        MediaFile.id == video_id,
+        MediaFile.username == current_user.username
+    ).first()
+    
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+    
+    # Return the video file
+    return FileResponse(video.path)  """
