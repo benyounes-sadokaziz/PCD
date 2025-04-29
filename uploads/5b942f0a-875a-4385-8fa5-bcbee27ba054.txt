@@ -1,0 +1,1 @@
+Transcription failed: HTTPSConnectionPool(host='api.au-syd.speech-to-text.watson.cloud.ibm.com', port=443): Max retries exceeded with url: /instances/65ba7de0-49e5-45c8-8889-1aaad8a468ad/v1/recognize?model=en-US_BroadbandModel (Caused by SSLError(SSLEOFError(8, 'EOF occurred in violation of protocol (_ssl.c:2396)')))

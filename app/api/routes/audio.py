@@ -17,20 +17,14 @@ router = APIRouter()
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-FFMPEG_PATH = "C:/Users/sadok/Downloads/ffmpeg-7.1.1-essentials_build/ffmpeg-7.1.1-essentials_build/bin/ffmpeg.exe"
-
 def extract_audio(video_path: str, audio_path: str) -> bool:
     try:
         subprocess.run([
-            FFMPEG_PATH, "-y",  # overwrite output if exists
-            "-i", video_path,
-            "-vn",  # no video
-            "-acodec", "libmp3lame",  # explicitly use mp3 encoder
-            audio_path
-        ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            "ffmpeg", "-i", video_path,
+            "-vn", "-acodec", "mp3", audio_path
+        ], check=True)
         return True
-    except subprocess.CalledProcessError as e:
-        print("Error:", e.stderr.decode())  # pour voir l'erreur exacte
+    except subprocess.CalledProcessError:
         return False
 
 @router.post("/transcribe")
@@ -100,7 +94,7 @@ async def transcribe(
     return transcription
 
 # Add endpoints for history and video retrieval
-""" @router.get("/api/history")
+@router.get("/api/history")
 async def get_history(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -177,7 +171,7 @@ async def delete_history_item(
     
     return {"message": "Item deleted successfully"}
 
- @router.get("/api/videos")
+@router.get("/api/videos")
 async def get_videos(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -201,7 +195,7 @@ async def get_videos(
     
     return result
 
- @router.get("/api/videos/{video_id}")
+@router.get("/api/videos/{video_id}")
 async def get_video(
     video_id: int,
     current_user: User = Depends(get_current_user),
@@ -217,4 +211,4 @@ async def get_video(
         raise HTTPException(status_code=404, detail="Video not found")
     
     # Return the video file
-    return FileResponse(video.path)  """
+    return FileResponse(video.path)
