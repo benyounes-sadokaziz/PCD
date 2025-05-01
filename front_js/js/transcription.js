@@ -66,36 +66,6 @@ document.addEventListener("DOMContentLoaded", () => {
         })
     })
   }
-
-  // Function to check if the transcription endpoint is available
-  async function checkTranscriptionEndpoint() {
-    try {
-      const token = localStorage.getItem("token")
-      if (!token) return
-
-      const response = await fetch("/transcribe", {
-        method: "HEAD",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
-
-      console.log("Transcription endpoint check:", response.status)
-
-      if (response.status === 404) {
-        console.warn("Transcription endpoint not found. Backend may not be properly configured.")
-      }
-    } catch (error) {
-      console.error("Error checking transcription endpoint:", error)
-    }
-  }
-
-  // Check the transcription endpoint when the page loads
-  checkTranscriptionEndpoint()
-  // This could include functionality like:
-  // - Saving transcriptions
-  // - Editing transcriptions
-  // - Exporting transcriptions
-  // - Analyzing transcriptions
-  // For now, it's mostly a placeholder for future expansion
 })
+  // Function to check if the transcription endpoint is available
+  
