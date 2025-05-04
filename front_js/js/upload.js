@@ -290,6 +290,8 @@ document.addEventListener("DOMContentLoaded", () => {
       console.log("Transcription received, length:", transcription.length)
       console.log("Transcription preview:", transcription.substring(0, 100) + "...")
 
+      
+
       // Display transcription
       if (transcriptionResult && transcriptionContent) {
         transcriptionContent.textContent = transcription
@@ -301,6 +303,7 @@ document.addEventListener("DOMContentLoaded", () => {
         console.error("Transcription result elements not found in the DOM.")
         showAlert("error", "Could not display transcription. Please try refreshing the page.")
       }
+
 
       // Reset form
       if (fileType !== "text") {
@@ -318,8 +321,13 @@ document.addEventListener("DOMContentLoaded", () => {
           textInput.value = ""
         }
       }
+      
 
       showAlert("success", "Transcription completed successfully!")
+
+      
+
+      
     } catch (error) {
       console.error("Transcription error:", error)
       showAlert("error", error.message || "An error occurred during transcription.")
@@ -343,69 +351,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Function to load videos
-  async function loadVideos() {
-    try {
-      const videoGrid = document.getElementById("video-grid")
-      if (!videoGrid) {
-        console.log("Video grid element not found, skipping video loading.")
-        return
-      }
+  
 
-      const token = localStorage.getItem("token")
-      if (!token) {
-        console.log("No token found, skipping video loading.")
-        return
-      }
-
-      // This endpoint would need to be implemented in your backend
-      const response = await fetch(`/api/videos`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
-
-      if (!response.ok) {
-        throw new Error("Failed to load videos")
-      }
-
-      const videos = await response.json()
-
-      if (videos.length === 0) {
-        videoGrid.innerHTML = `
-          <div class="empty-state">
-            <div class="empty-state-icon">
-              <i class="fas fa-film"></i>
-            </div>
-            <h3 class="empty-state-text">No videos yet</h3>
-            <p class="empty-state-subtext">Upload a video to see it here</p>
-          </div>
-        `
-        return
-      }
-
-      videoGrid.innerHTML = ""
-
-      videos.forEach((video) => {
-        const videoItem = document.createElement("div")
-        videoItem.className = "video-item"
-        videoItem.innerHTML = `
-          <video class="video-thumbnail" src="/api/videos/${video.id}" controls></video>
-          <div class="video-info">
-            <h3 class="video-title">${video.filename}</h3>
-            <p class="video-date">${new Date(video.created_at).toLocaleDateString()}</p>
-          </div>
-        `
-        videoGrid.appendChild(videoItem)
-      })
-    } catch (error) {
-      console.error("Error loading videos:", error)
-      // Don't show an alert for this to avoid cluttering the UI
-    }
-  }
-
-  // Load videos on page load
-  if (document.getElementById("video-grid")) {
-    loadVideos()
-  }
+  
 })

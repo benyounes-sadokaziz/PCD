@@ -163,13 +163,41 @@
             </div>
         </section>
 
-        <!-- Video Gallery removed -->
-    </div>
+        <!-- New Video Player Section -->
+        <section class="video-section">
+            <h2>Avatar Videos</h2>
+            <div id="video-container" class="video-container">
+                <!-- Video player will be inserted here by JavaScript -->
+            </div>
+        </section>
+        
+        
 
+        
+    </div>
+    <script src="/js/video-player.js"></script>
     <script src="../js/auth.js"></script>
     <script src="../js/upload.js"></script>
     <script src="../js/recorder.js"></script>
     <script src="../js/transcription.js"></script>
-    <script src="../js/history.js"></script>
+
+    <script>
+        // Initialize the video player
+        let videoPlayer;
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize the video player
+            videoPlayer = new VideoPlayer('video-container');
+            window.videoPlayer = videoPlayer; // Make it globally accessible
+            
+            // Listen for transcription completion event
+            document.addEventListener('transcriptionComplete', function(event) {
+                const { transcriptionId } = event.detail;
+                
+                // Fetch video IDs for this transcription
+                videoPlayer.fetchVideoIds(transcriptionId);
+            });
+        });
+    </script>
 </body>
 </html>

@@ -31,6 +31,18 @@ app.mount("/js", StaticFiles(directory="front_js/js"), name="js")
 app.mount("/assets", StaticFiles(directory="front_js/assets"), name="assets")
 app.mount("/pages", StaticFiles(directory="front_js/pages"), name="pages")
 
+
+
+
+
+# Mount static files
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Mount your existing videos directory (optional)
+# If you want to use your existing videos directory instead
+
+
+
 @app.get("/", response_class=HTMLResponse)
 async def read_index():
     return FileResponse("front_js/index.html")
@@ -66,7 +78,3 @@ async def validate_token(current_user: User = Depends(get_current_user)):
 @app.get("/")
 async def root():
     return {"message": "Welcome to the Transcription API"}
-
-
-
-

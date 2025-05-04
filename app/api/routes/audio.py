@@ -1,21 +1,31 @@
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Form
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Form, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import select
 import uuid
 import os
 import subprocess
+from typing import List, Optional
+from pydantic import BaseModel
 
 from app.core.watson_client import transcribe_audio_with_watson
 from app.db.models.file import MediaFile
 from app.db.database import SessionLocal, get_db
+from app.api.routes.NLP import NLP
 
 from app.core.dependencies import get_current_user
 from app.db.models.user import User
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 router = APIRouter()
 
 UPLOAD_DIR = "uploads"
+VIDEO_DIR = "videos"  # Directory for video files
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(VIDEO_DIR, exist_ok=True)
+
+# Model for video IDs response
+class VideoIdsResponse(BaseModel):
+    video_ids: List[str]
 
 def extract_audio(video_path: str, audio_path: str) -> bool:
     try:
@@ -33,10 +43,11 @@ async def transcribe(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    # Fixed the syntax error in the function parameters
+    # Generate a unique ID for this transcription
+    transcription_id = str(uuid.uuid4())
     
     ext = str(os.path.splitext(file.filename)[1]).lower()
-    unique_id = str(uuid.uuid4())
+    unique_id = transcription_id
     original_path = os.path.join(UPLOAD_DIR, f"{unique_id}{ext}")
 
     # Save uploaded file
@@ -48,18 +59,23 @@ async def transcribe(
     if ext == ".txt":
         text_content = content.decode("utf-8")  # assuming utf-8 encoding
         
+        # Extract video IDs using NLP
+        video_ids = NLP(text_content)
+        
         # Save metadata to DB for text files too
         txt_path = original_path
         media = MediaFile(
             username=current_user.username,
             filename=file.filename,
             path=original_path,
-            transcription_path=txt_path
+            transcription_path=txt_path,
+            video_ids=video_ids
         )
         db.add(media)
         db.commit()
         
-        return text_content
+        # Return response in the format expected by the frontend
+        return  text_content
 
     # Determine if file is audio or video
     if ext in [".mp4", ".mov", ".avi", ".mkv"]:
@@ -74,6 +90,9 @@ async def transcribe(
 
     # Transcribe
     transcription = transcribe_audio_with_watson(audio_path)
+    
+    # Extract video IDs using NLP
+    video_ids = NLP(transcription)
 
     # Save transcription
     txt_path = os.path.join(UPLOAD_DIR, f"{unique_id}.txt") 
@@ -85,13 +104,53 @@ async def transcribe(
         username=current_user.username,
         filename=file.filename,
         path=original_path,
-        transcription_path=txt_path
+        transcription_path=txt_path,
+        video_ids=video_ids
     )
     db.add(media)
     db.commit()
     db.refresh(media)
 
-    return transcription
+    # Return response in the format expected by the frontend
+    return  transcription
+
+
+@router.get("/api/get_video_ids", response_model=list)
+async def get_video_ids(
+    
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get video IDs associated with a transcription.
+    """
+    
+    try:
+        #print(f"Looking for transcription ID: {transcription_id}")
+        print(f"Current user: {current_user.username}")
+        
+        # Query the database for the media file
+        media_file = db.query(MediaFile)\
+    .filter(
+        MediaFile.username == current_user.username  # Keep this if you need user filtering
+    )\
+    .order_by(MediaFile.created_at.desc())\
+    .first()
+        
+        if not media_file:
+            #print(f"No media file found for ID: {transcription_id} and user: {current_user.username}")
+            raise HTTPException(status_code=404, detail="Transcription not found")
+        
+        print(f"Found media file: {media_file.id}, video_ids: {media_file.video_ids}")
+        
+        # Return the video IDs
+        return media_file.video_ids
+    
+    except Exception as e:
+        print(f"Error in get_video_ids: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
 
 # Add endpoints for history and video retrieval
 @router.get("/api/history")
@@ -117,14 +176,15 @@ async def get_history(
             "id": media.id,
             "filename": media.filename,
             "created_at": media.created_at,
-            "transcription": transcription
+            "transcription": transcription,
+            "video_count": len(media.video_ids) if media.video_ids else 0
         })
     
     return result
 
 @router.get("/api/transcriptions/{media_id}")
 async def get_transcription(
-    media_id: int,
+    media_id: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -142,7 +202,7 @@ async def get_transcription(
 
 @router.delete("/api/history/{media_id}")
 async def delete_history_item(
-    media_id: int,
+    media_id: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -171,44 +231,24 @@ async def delete_history_item(
     
     return {"message": "Item deleted successfully"}
 
-@router.get("/api/videos")
-async def get_videos(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    # Get video files for the current user
-    video_files = db.query(MediaFile).filter(
-        MediaFile.username == current_user.username,
-        MediaFile.filename.like("%.mp4") | 
-        MediaFile.filename.like("%.mov") | 
-        MediaFile.filename.like("%.avi") | 
-        MediaFile.filename.like("%.mkv")
-    ).order_by(MediaFile.created_at.desc()).all()
-    
-    result = []
-    for video in video_files:
-        result.append({
-            "id": video.id,
-            "filename": video.filename,
-            "created_at": video.created_at
-        })
-    
-    return result
-
-@router.get("/api/videos/{video_id}")
+@router.get("/videos/{video_id}")
 async def get_video(
-    video_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    video_id: str,
+    current_user: User = Depends(get_current_user)
 ):
-    # Get the video file
-    video = db.query(MediaFile).filter(
-        MediaFile.id == video_id,
-        MediaFile.username == current_user.username
-    ).first()
+    """
+    Serve a video file by its ID.
+    """
+    # Construct the path to the video file
+    video_path = os.path.join(VIDEO_DIR, video_id)
     
-    if not video:
+    # Check if the file exists
+    if not os.path.exists(video_path):
         raise HTTPException(status_code=404, detail="Video not found")
     
     # Return the video file
-    return FileResponse(video.path)
+    return FileResponse(
+        video_path, 
+        media_type="video/mp4",  # Adjust based on actual video format
+        filename=f"video_{video_id}"
+    )
