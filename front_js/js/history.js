@@ -1,11 +1,9 @@
 document.addEventListener("DOMContentLoaded", () => {
-  // Set API base URL - Use relative URL since frontend and backend are on same origin
   const API_BASE_URL = "" // Empty string for same-origin requests
 
   // Function to display alerts
   function showAlert(type, message) {
     try {
-      // Create a new alert element
       const alertDiv = document.createElement("div")
       alertDiv.className = `alert alert-${type}`
       alertDiv.textContent = message
@@ -18,7 +16,6 @@ document.addEventListener("DOMContentLoaded", () => {
       alertDiv.style.borderRadius = "4px"
       alertDiv.style.boxShadow = "0 2px 5px rgba(0,0,0,0.2)"
 
-      // Set background color based on alert type
       if (type === "success") {
         alertDiv.style.backgroundColor = "rgba(76, 175, 80, 0.9)"
         alertDiv.style.color = "white"
@@ -30,10 +27,8 @@ document.addEventListener("DOMContentLoaded", () => {
         alertDiv.style.color = "white"
       }
 
-      // Add to document body directly
       document.body.appendChild(alertDiv)
 
-      // Automatically remove after 5 seconds
       setTimeout(() => {
         if (alertDiv && alertDiv.parentNode) {
           alertDiv.parentNode.removeChild(alertDiv)
@@ -88,16 +83,14 @@ document.addEventListener("DOMContentLoaded", () => {
         emptyHistory.classList.add("hidden")
       }
 
-      // Clear existing items except the empty state
-      const existingItems = historyList.querySelectorAll(".history-item")
-      existingItems.forEach((item) => item.remove())
+      // Clear all existing items before adding new ones
+      historyList.innerHTML = ''
 
       // Add history items
       history.forEach((item) => {
         const historyItem = document.createElement("div")
         historyItem.className = "history-item"
 
-        // Determine file type class
         let typeClass = "type-text"
         if (item.filename.match(/\.(mp4|mov|avi|mkv)$/i)) {
           typeClass = "type-video"
@@ -125,30 +118,24 @@ document.addEventListener("DOMContentLoaded", () => {
         historyList.appendChild(historyItem)
       })
 
-      // Add event listeners to download buttons
-      const downloadButtons = document.querySelectorAll(".btn-download")
-      downloadButtons.forEach((button) => {
-        button.addEventListener("click", () => {
-          const itemId = button.getAttribute("data-id")
-          downloadTranscription(itemId)
-        })
+      // Add event listeners to download and delete buttons only once
+      document.querySelectorAll(".btn-download").forEach((button) => {
+        button.removeEventListener("click", handleDownload) // Remove previous listeners
+        button.addEventListener("click", handleDownload)
       })
 
-      // Add event listeners to delete buttons
-      const deleteButtons = document.querySelectorAll(".btn-delete")
-      deleteButtons.forEach((button) => {
-        button.addEventListener("click", () => {
-          const itemId = button.getAttribute("data-id")
-          deleteHistoryItem(itemId)
-        })
+      document.querySelectorAll(".btn-delete").forEach((button) => {
+        button.removeEventListener("click", handleDelete) // Remove previous listeners
+        button.addEventListener("click", handleDelete)
       })
+      
     } catch (error) {
       showAlert("error", "Failed to load history. Please try again later.")
       console.error("History loading error:", error)
     }
   }
 
-  // Function to download transcription
+  // Download transcription function
   async function downloadTranscription(itemId) {
     try {
       const token = localStorage.getItem("token")
@@ -158,7 +145,6 @@ document.addEventListener("DOMContentLoaded", () => {
         return
       }
 
-      // This endpoint would need to be implemented in your backend
       const response = await fetch(`/api/transcriptions/${itemId}`, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -171,7 +157,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const transcription = await response.text()
 
-      // Create a download link
       const blob = new Blob([transcription], { type: "text/plain" })
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
@@ -189,7 +174,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Function to delete history item
+  // Delete history item function
   async function deleteHistoryItem(itemId) {
     if (!confirm("Are you sure you want to delete this item? This action cannot be undone.")) {
       return
@@ -203,7 +188,6 @@ document.addEventListener("DOMContentLoaded", () => {
         return
       }
 
-      // This endpoint would need to be implemented in your backend
       const response = await fetch(`/api/history/${itemId}`, {
         method: "DELETE",
         headers: {
@@ -216,13 +200,23 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       showAlert("success", "Item deleted successfully.")
-
-      // Reload history
       loadHistory()
     } catch (error) {
       showAlert("error", "Failed to delete item.")
       console.error("Delete error:", error)
     }
+  }
+
+  // Handle download button click
+  function handleDownload(event) {
+    const itemId = event.target.getAttribute("data-id")
+    downloadTranscription(itemId)
+  }
+
+  // Handle delete button click
+  function handleDelete(event) {
+    const itemId = event.target.getAttribute("data-id")
+    deleteHistoryItem(itemId)
   }
 
   // Load history on page load

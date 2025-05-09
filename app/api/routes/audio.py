@@ -18,6 +18,8 @@ from fastapi.responses import FileResponse, JSONResponse
 
 router = APIRouter()
 
+FFMPEG_PATH = "C:/Users/sadok/Downloads/ffmpeg-7.1.1-essentials_build/ffmpeg-7.1.1-essentials_build/bin/ffmpeg.exe"
+
 UPLOAD_DIR = "uploads"
 VIDEO_DIR = "videos"  # Directory for video files
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -30,11 +32,15 @@ class VideoIdsResponse(BaseModel):
 def extract_audio(video_path: str, audio_path: str) -> bool:
     try:
         subprocess.run([
-            "ffmpeg", "-i", video_path,
-            "-vn", "-acodec", "mp3", audio_path
-        ], check=True)
+            FFMPEG_PATH, "-y",  # overwrite output if exists
+            "-i", video_path,
+            "-vn",  # no video
+            "-acodec", "libmp3lame",  # explicitly use mp3 encoder
+            audio_path
+        ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         return True
-    except subprocess.CalledProcessError:
+    except subprocess.CalledProcessError as e:
+        print("Error:", e.stderr.decode())  # pour voir l'erreur exacte
         return False
 
 @router.post("/transcribe")
