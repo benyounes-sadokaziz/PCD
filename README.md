@@ -1,6 +1,10 @@
 🤟 PCD — NLP to Sign Language Video Translator
 PCD is a full-stack application that enables users to input text, audio, or video, and receive a corresponding sign language translation in video format. It leverages speech-to-text, natural language processing (NLP), and sign video matching to provide accessible communication tools, especially for the deaf and hard-of-hearing community.
 
+Here is a demo link : 
+https://drive.google.com/drive/folders/1OPiwIZN7ZwoP-Q2UCeSOsgEzuW3nfXAi?usp=drive_link
+
+
 🧠 Core Features
 🔐 Authentication: Secure user registration and login
 
